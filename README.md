@@ -5,6 +5,7 @@ Make sure [Nyno](https://github.com/empowerd-cms/nyno) is installed and running 
 
 ```
 git clone https://github.com/empowerd-cms/nyno-lang
+bun install # or npm install
 npm link # for using 'nyno' command
 ```
 

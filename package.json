@@ -1,0 +1,13 @@
+{
+  "name": "nyno",
+  "version": "1.0.0",
+  "description": "Run .nyno workflow files",
+  "type": "module",
+  "bin": {
+    "nyno": "./cli/cli.js"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "js-yaml": "^4.1.0"
+  }
+}

@@ -1,0 +1,18 @@
+context:
+    i: 1
+
+workflow: 
+  - step: nyno-echo
+    args: ["${i}"]
+    next: [1,2]
+
+  - step: nyno-echo
+    args: ["the first from ${i}"]
+
+  - step: nyno-echo 
+    args: ["the second from ${i}"]
+    context:
+      extra: "for two"
+      extra_compliated:
+        test: true
+

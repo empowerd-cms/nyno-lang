@@ -66,7 +66,7 @@ const nodes = {};
     details['node_id'] = node.id;
     details['node_title'] = node.func;
 
-    details['new_context'] = details.output.c;
+    details['new_context'] = details.output.c ?? {};
     details['new_context'][`O_${node.id}`] = output;
     // remove double info
     delete details['output'];
@@ -115,12 +115,22 @@ const context = {'i': 0}
 import { convertWorkflowYaml } from './convertWorkflowYaml.js';
 
 const {context,workflow} = convertWorkflowYaml(yamlFile);
-//console.log('workflow',workflow);
 
 
-const o = await runWorkflow({context,workflow},null,{debug:false});
-//console.log('o',o);
-//console.log('o logs',JSON.stringify(o.log));
-console.log(JSON.stringify(o.log));
+const debug = "NYNO_DEBUG" in process.env && process.env.NYNO_DEBUG==1;
+if(debug) { 
+	console.log('workflow',workflow);
+}
+
+const o = await runWorkflow({context,workflow},null,{debug});
+
+if(debug) console.log('o',o);
+
+if(context.NYNO_ONE_VAR) {
+	console.log(JSON.stringify(o));
+
+} else {
+	console.log(JSON.stringify(o.log));
+}
 
 process.exit(0);

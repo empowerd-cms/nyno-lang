@@ -137,16 +137,22 @@ if (cmdSpec.context) {
   for (const key in cmdSpec.context) {
     const val = cmdSpec.context[key];
       if (val != null) {
-	  let fullValue = (replaceEnv(String(val)));
-	  // also add to context
-	  context[key] = fullValue;
+	  // also add to global context
+	  const notString = typeof val !== "string";
+	  if(notString) context[key] = val;
+	  else {
+	  	let fullValue = (replaceEnv(String(val)));
+	  	context[key] = fullValue;
+	  }
       }
   }
 }
 
 if (cmdSpec.args) {
   for (const item of cmdSpec.args) {
-    args.push(replaceEnv(String(item)));
+	  const notString = typeof item !== "string";
+	  if(notString) args.push(item);
+	  else args.push(replaceEnv(String(item)));
   }
 }
 

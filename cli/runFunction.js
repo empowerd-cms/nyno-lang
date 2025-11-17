@@ -45,7 +45,15 @@ const ports = load_nyno_ports(portsFile);
 const host = ports['HOST'] ?? 'localhost';
 
 const RUNNERS = {
-  php: { host, port: ports['PE'] ?? 9003, cmd: "php", file: path.resolve(__dirname, "runners/runner.php"), checkFunction:() => {
+  rb: { host, port: ports['RB'] ?? 9045, file: path.resolve(__dirname, "runners/runner.php"), checkFunction:() => {
+    const extensionsDir = path.resolve(__dirname, '../../extensions');
+    if (!fs.existsSync(extensionsDir)) return false;
+
+    return fs.readdirSync(extensionsDir, { withFileTypes: true })
+    .filter(d => d.isDirectory())
+    .some(dir => fs.existsSync(path.join(extensionsDir, dir.name, 'command.rb')));
+  } },
+  php: { host, port: ports['PE'] ?? 9003, file: path.resolve(__dirname, "runners/runner.php"), checkFunction:() => {
     const extensionsDir = path.resolve(__dirname, '../../extensions');
     if (!fs.existsSync(extensionsDir)) return false;
 
@@ -53,7 +61,7 @@ const RUNNERS = {
     .filter(d => d.isDirectory())
     .some(dir => fs.existsSync(path.join(extensionsDir, dir.name, 'command.php')));
   } },
-  js: { host, port: ports["JS"] ?? 9072, cmd: "node", file: path.resolve(__dirname, "runners/runner.js"), checkFunction:() => {
+  js: { host, port: ports["JS"] ?? 9072,  file: path.resolve(__dirname, "runners/runner.js"), checkFunction:() => {
     const extensionsDir = path.resolve(__dirname, '../../extensions');
     if (!fs.existsSync(extensionsDir)) return false;
 
@@ -61,7 +69,7 @@ const RUNNERS = {
     .filter(d => d.isDirectory())
     .some(dir => fs.existsSync(path.join(extensionsDir, dir.name, 'command.js')));
   } },
-  py: { host, port: ports['PY'] ?? 9006, cmd: "python3", file: path.resolve(__dirname, "runners/runner.py"), checkFunction:() => {
+  py: { host, port: ports['PY'] ?? 9006, file: path.resolve(__dirname, "runners/runner.py"), checkFunction:() => {
     const extensionsDir = path.resolve(__dirname, '../../extensions');
     if (!fs.existsSync(extensionsDir)) return false;
 
@@ -74,7 +82,7 @@ const RUNNERS_DISABLED = {};
 
 const API_KEY = ports['SECRET'] ?? 'changeme';
 const connections = {};
-const pending = { php: [], js: [], py: [], bash:[] };
+const pending = { rb:[], php: [], js: [], py: [], bash:[] };
 
 // --- Persistent TCP connection ---
 async function connectRunner(type,config={}) {

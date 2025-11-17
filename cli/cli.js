@@ -1,136 +1,135 @@
 #!/usr/bin/env node
-import fs from 'fs';
-import path from 'path';
-import yaml from 'js-yaml';
-import { fileURLToPath } from 'url';
-import { spawn,spawnSync } from 'child_process';
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import net from "net";
+import fs from "fs";
+import yaml from "js-yaml";
 
-import { runYamlTool} from './runYamlTool.js';
-import { connectAllRunners} from './runFunction.js';
+// --- CLI argument parsing ---
+const argv = process.argv.slice(2);
+let yamlFile = null;
+let workflowJSON = null;
+let context = {};
+let apiKey = "change_me";
 
-/**
- * Run a workflow from start node
- */
-export async function runWorkflow(wf, startNodeId=null,config={}) {
-	let context = wf.context;
-  const oldNodes = Object.fromEntries(wf.workflow.map((n) => [n.id, n]));
-  const log = [];
-  let current = startNodeId;
-   //console.log('old nodes',oldNodes);
-const nodes = {};
-  for(const [key,value] of Object.entries(oldNodes)) {
-	  //console.log('key,value',[key,value]);
-	const node = value;
-	  if(!current) current = node.id; //= startNodeId;
-
-	nodes[key] = {
-	    id: node.id,
-	    func: node.func,
-	    json: node.json, // json object from yaml
-	    info: node.info, // raw yaml
-	    args: node.args, // extracted args?
-	    nextMap: node.nextMap, // next? if not nextMap?
-	}
-	
-  }
-
-   //console.log('nodes',nodes);
-  //console.log(`Starting workflow at node: ${startNodeId}`);
-
-  while (current && nodes[current]) {
-    const node = nodes[current];
-    //console.log(`Processing node: ${node.id} (${node.func})`);
-
-	// clear old context system tokens
-	if('set_context' in context) delete context['set_context'];
-
-    const input = JSON.parse(JSON.stringify(context));
-    
-    const yamlOutput = await runYamlTool(node, context,config);
-      //console.log('yamlOutput b4',yamlOutput);
-
-     const outputValue =
-      typeof yamlOutput.output === 'string' ? yamlOutput.output : JSON.stringify(yamlOutput.output);
-      //console.log('yamlOutput',yamlOutput);
-
-      const output = yamlOutput.output.r;
-
-    context = JSON.parse(JSON.stringify(yamlOutput.output.c ?? {}));
-    context[`O_${node.id}`] = output;
-
-    const details = JSON.parse(JSON.stringify(yamlOutput)); // clone
-	  //console.log('details',details);
-
-    details['node_id'] = node.id;
-    details['node_title'] = node.func;
-
-    details['new_context'] = details.output.c ?? {};
-    details['new_context'][`O_${node.id}`] = output;
-    // remove double info
-    delete details['output'];
-    log.push({
-      input,
-      output,
-      details, 
-    });
-
-       //console.log(`Node output: ${outputValue}`);
-
-	  const nextMap = JSON.parse(outputValue).r ?? '';
-    if (node.nextMap) {
-      current = node.nextMap[nextMap] ?? node.nextMap['0'] ?? null;
-      //console.log(`Next node determined: ${current}`);
-    } else {
-      current = node.next ?? null;
-      //console.log(`Next node: ${current}`);
+for (let i = 0; i < argv.length; i++) {
+  const arg = argv[i];
+  if (arg === "--workflow") {
+    workflowJSON = argv[i + 1];
+    if (!workflowJSON) {
+      console.error("Missing value for --workflow");
+      process.exit(1);
     }
+    i++;
+  } else if (arg === "--context" || arg === "-c") {
+    const nextArg = argv[i + 1];
+    if (!nextArg) {
+      console.error("Missing value for --context");
+      process.exit(1);
+    }
+    try {
+      context = JSON.parse(nextArg);
+    } catch (e) {
+      console.error("Invalid JSON for context:", e.message);
+      process.exit(1);
+    }
+    i++;
+  } else if (arg === "--apiKey") {
+    apiKey = argv[i + 1];
+    if (!apiKey) {
+      console.error("Missing value for --apiKey");
+      process.exit(1);
+    }
+    i++;
+  } else if (!yamlFile && !workflowJSON) {
+    yamlFile = arg;
   }
+}
 
-  //console.log('Workflow finished');
-	if("NYNO_ONE_VAR" in context) {
-		return context[context.NYNO_ONE_VAR];
+// Validate input
+if (!yamlFile && !workflowJSON) {
+  console.error("You must provide either a YAML file or --workflow JSON string.");
+  process.exit(1);
+}
+
+// --- Prepare YAML content ---
+let yamlData;
+
+if (workflowJSON) {
+  // Parse JSON string to object
+  try {
+    yamlData = JSON.parse(workflowJSON);
+  } catch (e) {
+    console.error("Invalid JSON for --workflow:", e.message);
+    process.exit(1);
+  }
+} else if (yamlFile) {
+  if (!fs.existsSync(yamlFile)) {
+    console.error("YAML file does not exist:", yamlFile);
+    process.exit(1);
+  }
+  try {
+    yamlData = yaml.load(fs.readFileSync(yamlFile, "utf8"));
+  } catch (e) {
+    console.error("Error parsing YAML file:", e.message);
+    process.exit(1);
+  }
+}
+
+// Merge context into yamlData.context
+if (context && Object.keys(context).length > 0) {
+  if (!yamlData || typeof yamlData !== "object") yamlData = {};
+  yamlData.context = { ...(yamlData.context || {}), ...context };
+}
+
+// Convert back to YAML string
+const finalYamlContent = yaml.dump(yamlData);
+
+console.log('sening final',finalYamlContent);
+// --- TCP connection ---
+const HOST = "0.0.0.0";
+const PORT = 9024;
+const PATH = "/run-nyno";
+
+const client = new net.Socket();
+
+client.connect(PORT, HOST, () => {
+  // First: send connect message
+  client.write(`c${JSON.stringify({ apiKey })}\n`);
+
+  // Then: send query message with YAML text
+  const qMsg = { yamlContent: finalYamlContent, path: PATH };
+  client.write(`q${JSON.stringify(qMsg)}\n`);
+});
+
+let buffer = "";
+
+let responses = 0;
+client.on("data", (data) => {
+	responses++;
+  buffer += data.toString();
+  let idx;
+  while ((idx = buffer.indexOf("\n")) >= 0) {
+    const msg = buffer.slice(0, idx);
+    buffer = buffer.slice(idx + 1);
+    if (!msg.trim()) continue;
+
+
+    // --- Print + Exit after processing the second response ---
+    if(responses == 2){
+	    try {
+	      const resp = JSON.parse(msg);
+	      console.log(JSON.stringify(resp, null, 2));
+	    } catch (e) {
+	      console.log(msg);
+	    }
+    	   process.exit(0);
 	}
+  }
+});
 
-  
-  return { log, context };
-}
+client.on("error", (err) => {
+  console.error("TCP error:", err.message);
+  process.exit(1);
+});
 
+client.on("close", () => process.exit(0));
 
-await Promise.all(connectAllRunners({debug:false}));
-
-
-let yamlFile =  process.argv[2];
-
-/*
-const context = {'i': 0}
-	workflow:[{
-    id: '1',
-    func: 'route_/test_nyno_echo',
-    info: 'nyno-echo:\n  args:\n    - "${i}"\n',
-    args: [],
-  }];
-*/
-import { convertWorkflowYaml } from './convertWorkflowYaml.js';
-
-const {context,workflow} = convertWorkflowYaml(yamlFile);
-
-
-const debug = "NYNO_DEBUG" in process.env && process.env.NYNO_DEBUG==1;
-if(debug) { 
-	console.log('workflow',workflow);
-}
-
-const o = await runWorkflow({context,workflow},null,{debug});
-
-if(debug) console.log('o',o);
-
-if(context.NYNO_ONE_VAR) {
-	console.log(JSON.stringify(o));
-
-} else {
-	console.log(JSON.stringify(o.log));
-}
-
-process.exit(0);

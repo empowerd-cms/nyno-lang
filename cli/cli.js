@@ -83,7 +83,10 @@ if (context && Object.keys(context).length > 0) {
 // Convert back to YAML string
 const finalYamlContent = yaml.dump(yamlData);
 
-console.log('sening final',finalYamlContent);
+if(process.env.NYNO_LANG_DEBUG) {
+console.log('sending final',finalYamlContent);
+}
+
 // --- TCP connection ---
 const HOST = "0.0.0.0";
 const PORT = 9024;
@@ -106,6 +109,7 @@ let responses = 0;
 client.on("data", (data) => {
 	responses++;
   buffer += data.toString();
+	//console.log({responses});
   let idx;
   while ((idx = buffer.indexOf("\n")) >= 0) {
     const msg = buffer.slice(0, idx);
@@ -114,7 +118,7 @@ client.on("data", (data) => {
 
 
     // --- Print + Exit after processing the second response ---
-    if(responses == 2){
+    if(responses > 1){
 	    try {
 	      const resp = JSON.parse(msg);
 	      console.log(JSON.stringify(resp, null, 2));
